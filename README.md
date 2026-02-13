@@ -35,3 +35,11 @@ adapters -> schema -> features -> risk_model -> scheduling/escalation
   - completion improvement %
   - delay reduction %
   - ignore reduction %
+-- <<<<<<< codex/create-productivity-engine-repository-ytrvvv
+
+ --## Streamlit demo
+-- A presentable Streamlit UI is available in `ui_demo_streamlit/`.
+
+-- See setup and run instructions here: [`ui_demo_streamlit/README.md`](ui_demo_streamlit/README.md).
+--- =======
+--- >>>>>>> main
