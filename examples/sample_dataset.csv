@@ -1,0 +1,7 @@
+task_id,timestamp,action,deadline_hours,category
+t1,2025-01-01T09:00:00,created,30,work
+t1,2025-01-01T11:00:00,done,28,work
+t2,2025-01-02T10:00:00,created,10,health
+t2,2025-01-02T13:00:00,ignore,7,health
+t3,2025-01-03T08:00:00,created,80,study
+t3,2025-01-03T20:00:00,done,68,study
