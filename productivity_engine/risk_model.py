@@ -42,6 +42,11 @@ def _sigmoid(value: float) -> float:
     return 1.0 / (1.0 + exp(-value))
 
 
+def heuristic_risk(task: dict, features: dict, hour: int, return_components: bool = False):
+    """Compute a bounded heuristic risk score between 0 and 1.
+
+    If ``return_components`` is True, return a dict with score + factors.
+    """
 def heuristic_risk(task: dict, features: dict, hour: int) -> float:
     """Compute a bounded heuristic risk score between 0 and 1."""
 
@@ -50,6 +55,26 @@ def heuristic_risk(task: dict, features: dict, hour: int) -> float:
     deadline_hours = task.get("deadline_hours")
     streak = features.get("recent_streak", {}).get(task.get("task_id", ""), 0)
 
+    hour_penalty = 0.4 * (1.0 - completion_rate)
+    urgency = 0.0 if deadline_hours is None else max(0.0, (24.0 - deadline_hours) / 24.0)
+    ignore_penalty = 0.3 * ignore_rate
+    deadline_urgency = 0.25 * urgency
+    streak_bonus = 0.2 * min(0.3, streak * 0.05)
+
+    score = hour_penalty + ignore_penalty + deadline_urgency - streak_bonus
+    bounded = max(0.0, min(1.0, score))
+
+    if return_components:
+        return {
+            "score": bounded,
+            "hour_penalty": hour_penalty,
+            "ignore_penalty": ignore_penalty,
+            "deadline_urgency": deadline_urgency,
+            "streak_bonus": streak_bonus,
+            "base_rate": completion_rate,
+        }
+
+    return bounded
     hour_penalty = 1.0 - completion_rate
     urgency = 0.0 if deadline_hours is None else max(0.0, (24.0 - deadline_hours) / 24.0)
     streak_bonus = min(0.3, streak * 0.05)

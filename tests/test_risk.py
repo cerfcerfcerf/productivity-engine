@@ -27,3 +27,12 @@ def test_logistic_training_and_compute_risk():
     task = {"task_id": "t1", "deadline_hours": 12, "weekday": 2, "category": "work"}
     risk = compute_risk(task, features, model, hour=9)
     assert 0.0 <= risk <= 1.0
+
+
+
+def test_heuristic_risk_components():
+    features = extract_features(sample_events())
+    result = heuristic_risk({"task_id": "t1", "deadline_hours": 4}, features, hour=10, return_components=True)
+    assert 0.0 <= result["score"] <= 1.0
+    for key in ["hour_penalty", "ignore_penalty", "deadline_urgency", "streak_bonus", "base_rate"]:
+        assert key in result
