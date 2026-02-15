@@ -1,0 +1,4 @@
+quick run
+venv\Scripts\activate
+pip install -r ui_demo_streamlit\requirements.txt
+streamlit run ui_demo_streamlit\app.py
