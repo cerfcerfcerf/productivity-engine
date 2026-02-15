@@ -8,19 +8,22 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from productivity_engine.adapters import csv_adapter, json_adapter
 from productivity_engine.evaluator import compare
 from productivity_engine.escalation import deadline_schedule
+from productivity_engine.explain import explain_model
 from productivity_engine.features import extract_features
+from productivity_engine.ml_pipeline import benchmark_models, build_training_table, train_best_model
 from productivity_engine.risk_model import compute_risk, heuristic_risk, train_logistic
-from productivity_engine.risk_model import compute_risk, train_logistic
 from productivity_engine.scheduling import best_nudge_times
 from productivity_engine.simulation import simulate_adaptive, simulate_baseline
 
-
-ACTIONS = ["done", "snooze", "ignore", "created"]
-DEMO_DATASET = Path(__file__).resolve().parents[1] / "examples" / "sample_dataset.csv"
 ACTIONS = ["created", "done", "snooze", "ignore"]
+DEMO_DATASET = Path(__file__).resolve().parents[1] / "examples" / "sample_dataset.csv"
 
 
 def _parse_events_from_path(file_path: str) -> list:
@@ -30,14 +33,6 @@ def _parse_events_from_path(file_path: str) -> list:
     if suffix == ".json":
         return json_adapter.parse(file_path)
     raise ValueError("Unsupported file type. Please use .csv or .json")
-
-
-def _parse_uploaded(uploaded_file) -> list:
-    suffix = Path(uploaded_file.name).suffix.lower()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
-        handle.write(uploaded_file.getbuffer())
-        temp_path = handle.name
-    return _parse_events_from_path(temp_path)
 
 
 def _build_summary(events: list) -> dict[str, Any]:
@@ -99,8 +94,6 @@ def run_engine(events: list, task: dict) -> dict[str, Any]:
         "risk_score": risk_score,
         "risk_level": risk_level,
         "risk_components": risk_components,
-        "risk_score": risk_score,
-        "risk_level": risk_level,
         "nudge_hours": nudge_hours,
         "escalation": escalation,
         "baseline": baseline,
@@ -111,6 +104,9 @@ def run_engine(events: list, task: dict) -> dict[str, Any]:
 
 def main() -> None:
     import streamlit as st
+    from datetime import datetime
+
+    from productivity_engine.schema import NormalizedEvent
 
     @st.cache_data
     def parse_events_from_path(file_path: str) -> list[dict[str, Any]]:
@@ -126,42 +122,28 @@ def main() -> None:
 
     @st.cache_data
     def cached_extract_features(events_payload: list[dict[str, Any]]) -> dict[str, Any]:
-        from productivity_engine.schema import NormalizedEvent
-        from datetime import datetime
-
-        events = [
-            NormalizedEvent(
-                task_id=e["task_id"],
-                timestamp=datetime.fromisoformat(e["timestamp"]),
-                action=e["action"],
-                deadline_hours=e["deadline_hours"],
-                category=e["category"],
-            )
-            for e in events_payload
-        ]
-        return extract_features(events)
+        return extract_features(hydrate(events_payload))
 
     @st.cache_resource
     def cached_train_logistic(events_payload: list[dict[str, Any]]):
-        from productivity_engine.schema import NormalizedEvent
-        from datetime import datetime
+        return train_logistic(hydrate(events_payload))
 
-        events = [
-            NormalizedEvent(
-                task_id=e["task_id"],
-                timestamp=datetime.fromisoformat(e["timestamp"]),
-                action=e["action"],
-                deadline_hours=e["deadline_hours"],
-                category=e["category"],
-            )
-            for e in events_payload
-        ]
-        return train_logistic(events)
+    @st.cache_data
+    def cached_ml_benchmark(events_payload: list[dict[str, Any]]) -> dict[str, Any]:
+        events = hydrate(events_payload)
+        X, y, feature_names = build_training_table(events)
+        report = benchmark_models(X, y, seed=42)
+        report["feature_names"] = feature_names
+        return report
+
+    @st.cache_resource
+    def cached_best_model(events_payload: list[dict[str, Any]]):
+        events = hydrate(events_payload)
+        X, y, _ = build_training_table(events)
+        model, _ = train_best_model(X, y)
+        return model
 
     def hydrate(events_payload: list[dict[str, Any]]):
-        from productivity_engine.schema import NormalizedEvent
-        from datetime import datetime
-
         return [
             NormalizedEvent(
                 task_id=e["task_id"],
@@ -180,6 +162,7 @@ def main() -> None:
         st.header("Controls")
         uploaded = st.file_uploader("Upload event log", type=["csv", "json"])
         use_demo = st.checkbox("Load demo dataset", value=True)
+        run_ml_benchmark = st.checkbox("Run ML benchmark (advanced)", value=False)
         task_type = st.selectbox("Task type", options=["habit", "deadline"], index=0)
         category = st.text_input("Category", value="study")
         priority = st.number_input("Priority", min_value=1, max_value=3, value=2, step=1)
@@ -210,10 +193,6 @@ def main() -> None:
             data_source = f"demo dataset ({DEMO_DATASET})"
         elif uploaded is not None:
             events_payload = parse_uploaded_bytes(uploaded.name, uploaded.getvalue())
-            events = csv_adapter.parse("examples/sample_dataset.csv")
-            data_source = "demo dataset (examples/sample_dataset.csv)"
-        elif uploaded is not None:
-            events = _parse_uploaded(uploaded)
             data_source = f"uploaded file ({uploaded.name})"
         else:
             st.error("Please upload a CSV/JSON file or enable 'Load demo dataset'.")
@@ -227,10 +206,6 @@ def main() -> None:
         features = cached_extract_features(events_payload)
         model = cached_train_logistic(events_payload)
 
-        if not events:
-            st.error("No events were found in the selected input.")
-            return
-
         task = {
             "task_id": "ui_demo_task",
             "task_type": task_type,
@@ -242,13 +217,14 @@ def main() -> None:
             "now_hour": int(now_hour),
         }
 
-        risk_score = compute_risk(task=task, features=features, model=model, hour=task["now_hour"])
-        risk_components = heuristic_risk(task=task, features=features, hour=task["now_hour"], return_components=True)
         result = run_engine(events, task)
-        result["risk_score"] = risk_score
-        result["risk_components"] = risk_components
-        result["features"] = features
-        result = run_engine(events, task)
+        result["risk_score"] = compute_risk(task=task, features=features, model=model, hour=task["now_hour"])
+        result["risk_components"] = heuristic_risk(
+            task=task,
+            features=features,
+            hour=task["now_hour"],
+            return_components=True,
+        )
 
         st.success(f"Loaded {len(events)} events from {data_source}.")
 
@@ -304,7 +280,22 @@ def main() -> None:
         ec3.write("**Comparison metrics**")
         ec3.table([result["comparison"]])
 
-wwww        st.download_button(
+        if run_ml_benchmark:
+            st.subheader("F) Advanced ML Benchmark")
+            ml_report = cached_ml_benchmark(events_payload)
+            ranking = ml_report.get("ranking", [])
+            if ranking:
+                st.table(ranking)
+                best_model_name = ml_report.get("best_model")
+                best_model = cached_best_model(events_payload)
+                explanation = explain_model(best_model, ml_report.get("feature_names", []))
+                st.write(f"Best model: **{best_model_name}**")
+                st.write("Top-10 feature importance")
+                st.table(explanation.get("top_features", []))
+            else:
+                st.info("Not enough data to run ML benchmark.")
+
+        st.download_button(
             "Download result JSON",
             data=json.dumps(result, indent=2, default=str),
             file_name="productivity_engine_result.json",

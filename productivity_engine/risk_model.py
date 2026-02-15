@@ -43,11 +43,6 @@ def _sigmoid(value: float) -> float:
 
 
 def heuristic_risk(task: dict, features: dict, hour: int, return_components: bool = False):
-    """Compute a bounded heuristic risk score between 0 and 1.
-
-    If ``return_components`` is True, return a dict with score + factors.
-    """
-def heuristic_risk(task: dict, features: dict, hour: int) -> float:
     """Compute a bounded heuristic risk score between 0 and 1."""
 
     completion_rate = features.get("completion_by_hour", {}).get(hour, features.get("overall_completion_rate", 0.0))
@@ -75,12 +70,6 @@ def heuristic_risk(task: dict, features: dict, hour: int) -> float:
         }
 
     return bounded
-    hour_penalty = 1.0 - completion_rate
-    urgency = 0.0 if deadline_hours is None else max(0.0, (24.0 - deadline_hours) / 24.0)
-    streak_bonus = min(0.3, streak * 0.05)
-
-    score = 0.4 * hour_penalty + 0.3 * ignore_rate + 0.25 * urgency - 0.2 * streak_bonus
-    return max(0.0, min(1.0, score))
 
 
 def train_logistic(events: list[NormalizedEvent]) -> TrainedRiskModel:

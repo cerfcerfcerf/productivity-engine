@@ -36,15 +36,31 @@ adapters -> schema -> features -> risk_model -> scheduling/escalation
   - delay reduction %
   - ignore reduction %
 
+## ML Benchmarking
+- `productivity_engine.ml_pipeline` builds a deterministic task-instance training table from event streams.
+- Benchmarked models:
+  - LogisticRegression (with StandardScaler)
+  - RandomForestClassifier
+  - GradientBoostingClassifier
+- Metrics reported per model:
+  - ROC-AUC
+  - F1 score
+  - Accuracy
+- Evaluation method:
+  - Stratified train/test split
+  - 5-fold (or smallest valid) stratified cross-validation
+- Explainability:
+  - Linear models use sorted coefficient magnitudes
+  - Tree models use sorted `feature_importances_`
+
+Run benchmarking from the command line:
+```bash
+python scripts/run_benchmark.py --data examples/sample_dataset.csv
+```
+
+The script prints results and saves them to `outputs/benchmark_report.json`.
+
 ## Streamlit demo
 A presentable Streamlit UI is available in `ui_demo_streamlit/`.
 
 See setup and run instructions here: [`ui_demo_streamlit/README.md`](ui_demo_streamlit/README.md).
--- <<<<<<< codex/create-productivity-engine-repository-ytrvvv
-
- --## Streamlit demo
--- A presentable Streamlit UI is available in `ui_demo_streamlit/`.
-
--- See setup and run instructions here: [`ui_demo_streamlit/README.md`](ui_demo_streamlit/README.md).
---- =======
---- >>>>>>> main
