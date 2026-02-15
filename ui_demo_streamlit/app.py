@@ -13,12 +13,14 @@ from productivity_engine.evaluator import compare
 from productivity_engine.escalation import deadline_schedule
 from productivity_engine.features import extract_features
 from productivity_engine.risk_model import compute_risk, heuristic_risk, train_logistic
+from productivity_engine.risk_model import compute_risk, train_logistic
 from productivity_engine.scheduling import best_nudge_times
 from productivity_engine.simulation import simulate_adaptive, simulate_baseline
 
 
 ACTIONS = ["done", "snooze", "ignore", "created"]
 DEMO_DATASET = Path(__file__).resolve().parents[1] / "examples" / "sample_dataset.csv"
+ACTIONS = ["created", "done", "snooze", "ignore"]
 
 
 def _parse_events_from_path(file_path: str) -> list:
@@ -97,6 +99,8 @@ def run_engine(events: list, task: dict) -> dict[str, Any]:
         "risk_score": risk_score,
         "risk_level": risk_level,
         "risk_components": risk_components,
+        "risk_score": risk_score,
+        "risk_level": risk_level,
         "nudge_hours": nudge_hours,
         "escalation": escalation,
         "baseline": baseline,
@@ -206,6 +210,10 @@ def main() -> None:
             data_source = f"demo dataset ({DEMO_DATASET})"
         elif uploaded is not None:
             events_payload = parse_uploaded_bytes(uploaded.name, uploaded.getvalue())
+            events = csv_adapter.parse("examples/sample_dataset.csv")
+            data_source = "demo dataset (examples/sample_dataset.csv)"
+        elif uploaded is not None:
+            events = _parse_uploaded(uploaded)
             data_source = f"uploaded file ({uploaded.name})"
         else:
             st.error("Please upload a CSV/JSON file or enable 'Load demo dataset'.")
@@ -218,6 +226,10 @@ def main() -> None:
         events = hydrate(events_payload)
         features = cached_extract_features(events_payload)
         model = cached_train_logistic(events_payload)
+
+        if not events:
+            st.error("No events were found in the selected input.")
+            return
 
         task = {
             "task_id": "ui_demo_task",
@@ -236,6 +248,7 @@ def main() -> None:
         result["risk_score"] = risk_score
         result["risk_components"] = risk_components
         result["features"] = features
+        result = run_engine(events, task)
 
         st.success(f"Loaded {len(events)} events from {data_source}.")
 
@@ -291,7 +304,7 @@ def main() -> None:
         ec3.write("**Comparison metrics**")
         ec3.table([result["comparison"]])
 
-        st.download_button(
+wwww        st.download_button(
             "Download result JSON",
             data=json.dumps(result, indent=2, default=str),
             file_name="productivity_engine_result.json",
